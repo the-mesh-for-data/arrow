@@ -29,7 +29,10 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.ReferenceManager;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.TypeLayout;
+import org.apache.arrow.vector.dictionary.Dictionary;
+import org.apache.arrow.vector.dictionary.DictionaryEncoder;
 import org.apache.arrow.vector.ipc.message.ArrowFieldNode;
+import org.apache.arrow.vector.types.pojo.Field;
 
 /**
  * Importer for {@link ArrowArray}.
@@ -45,7 +48,7 @@ final class ArrayImporter {
     this.vector = vector;
   }
 
-  void importArray(BufferAllocator allocator, ArrowArray src) {
+  void importArray(BufferAllocator allocator, ArrowArray src, Field field) {
     ArrowArray.Snapshot snapshot = src.snapshot();
     checkState(snapshot.release != NULL, "Cannot import released ArrowArray");
 
@@ -58,7 +61,7 @@ final class ArrayImporter {
     recursionLevel = 0;
     // This keeps the array alive as long as there are any buffers that need it
     referenceManager = new FFIReferenceManager(ownedArray);
-    doImport(snapshot);
+    doImport(snapshot, field);
   }
 
   private void importChild(ArrayImporter parent, ArrowArray src) {
@@ -70,10 +73,10 @@ final class ArrayImporter {
     // Perhaps we can move the child structs on import,
     // but that is another level of complication.
     referenceManager = parent.referenceManager;
-    doImport(snapshot);
+    doImport(snapshot, null); // assumes no dictionary
   }
 
-  private void doImport(ArrowArray.Snapshot snapshot) {
+  private void doImport(ArrowArray.Snapshot snapshot, Field field) {
     // First import children (required for reconstituting parent array data)
     long[] children = NativeUtil.toJavaArray(snapshot.children, checkedCastToInt(snapshot.n_children));
     if (children != null) {
@@ -85,6 +88,22 @@ final class ArrayImporter {
         ArrayImporter childImporter = new ArrayImporter(childVectors.get(i));
         childImporter.importChild(this, ArrowArray.wrap(children[i]));
       }
+    }
+
+    if (snapshot.dictionary != NULL) {
+      ArrowArray dictionary = ArrowArray.wrap(snapshot.dictionary);
+
+      // now I need to create an ArrayImporter for the dictionary.
+      // I need to initialize it with a newly allocated FieldVector ??
+      // then doImport to populate this new FieldVector
+      // ArrayImporter dictionaryImporter = new ArrayImporter(XXX);
+
+      // Also I need to allocate an array (FieldVector ?) into which I will place
+      // the results of the decode() operation.
+      // Then, I need to copy the contents of that array in vector
+
+      Dictionary d = new Dictionary(null, field.getDictionary());
+      DictionaryEncoder.decode(null, d);
     }
 
     // TODO: support dictionary import
@@ -114,8 +133,8 @@ final class ArrayImporter {
     for (long bufferPtr : buffers) {
       ArrowBuf buffer = null;
       if (bufferPtr != NULL) {
-        int buferSize = vector.getBufferSizeFor(checkedCastToInt(snapshot.length));
-        buffer = new ArrowBuf(referenceManager, null, buferSize, bufferPtr);
+        int bufferSize = vector.getBufferSizeFor(checkedCastToInt(snapshot.length));
+        buffer = new ArrowBuf(referenceManager, null, bufferSize, bufferPtr);
       }
       result.add(buffer);
     }

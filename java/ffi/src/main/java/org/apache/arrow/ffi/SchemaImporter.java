@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 
@@ -53,7 +54,21 @@ final class SchemaImporter {
     boolean nullable = (snapshot.flags & Flags.ARROW_FLAG_NULLABLE) != 0;
     Map<String, String> metadata = Metadata.decode(snapshot.metadata);
     // TODO: support dictionary
-    FieldType fieldType = new FieldType(nullable, arrowType, null, metadata);
+
+    DictionaryEncoding dictionaryEncoding = null;
+    if (snapshot.dictionary != NULL) {
+      ArrowSchema dictionary = ArrowSchema.wrap(snapshot.dictionary);
+      boolean ordered = (snapshot.flags & Flags.ARROW_FLAG_DICTIONARY_ORDERED) != 0;
+      ArrowType.Int indexType = (ArrowType.Int) arrowType;
+      dictionaryEncoding = new DictionaryEncoding(1L /* What is the ID ??? */, ordered, indexType);
+
+      // change the arrowType to be that of the dictionary (rather than that of the indices)
+      ArrowSchema.Snapshot dictionarySnapshot = dictionary.snapshot();
+      String dictionaryFormat = NativeUtil.toJavaString(dictionarySnapshot.format);
+      arrowType = Format.asType(dictionaryFormat, dictionarySnapshot.flags);
+    }
+
+    FieldType fieldType = new FieldType(nullable, arrowType, dictionaryEncoding, metadata);
 
     List<Field> children = null;
     long[] childrenIds = NativeUtil.toJavaArray(snapshot.children, checkedCastToInt(snapshot.n_children));

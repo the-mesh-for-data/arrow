@@ -187,9 +187,9 @@ public final class FFI {
    * @param array     C data interface struct holding the array data
    * @param vector    Imported vector object [out]
    */
-  public static void importIntoVector(BufferAllocator allocator, ArrowArray array, FieldVector vector) {
+  public static void importIntoVector(BufferAllocator allocator, ArrowArray array, FieldVector vector, Field field) {
     ArrayImporter importer = new ArrayImporter(vector);
-    importer.importArray(allocator, array);
+    importer.importArray(allocator, array, field);
   }
 
   /**
@@ -206,8 +206,15 @@ public final class FFI {
    */
   public static FieldVector importVector(BufferAllocator allocator, ArrowArray array, ArrowSchema schema) {
     Field field = importField(schema);
+    // at this point, if ArrowArray represents a dictionary,
+    // the arrowType in field's fieldType reflect the type of
+    // data in the vector (e.g. strings) not the indexType).
+    // field also includes a dictionaryEncoding field which contains the indexType.
+    // This dictionaryEncoding field will later be used for initializing a Dictionary
+    // object which will be a parameter to DictionaryEncoder.decode()
+
     FieldVector vector = field.createVector(allocator);
-    importIntoVector(allocator, array, vector);
+    importIntoVector(allocator, array, vector, field);
     return vector;
   }
 
@@ -230,7 +237,7 @@ public final class FFI {
       for (Field field : root.getSchema().getFields()) {
         structVector.addOrGet(field.getName(), field.getFieldType(), FieldVector.class);
       }
-      importIntoVector(allocator, array, structVector);
+      importIntoVector(allocator, array, structVector, null); // is null right? assumes no dictionary
       StructVectorUnloader unloader = new StructVectorUnloader(structVector);
       VectorLoader loader = new VectorLoader(root);
       try (ArrowRecordBatch recordBatch = unloader.getRecordBatch()) {
