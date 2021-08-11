@@ -78,9 +78,10 @@ public class TestArray extends TestFFI {
       }
 
       // Consumer imports vector
-      try (FieldVector vector = FFI.importVector(rootAllocator(), consumerArrowArray, consumerArrowSchema)) {
-        assertEquals(expected, vector.toString());
-      }
+      FFI.ImportPair importPair = FFI.importVector(rootAllocator(), consumerArrowArray, consumerArrowSchema);
+      FieldVector vector = importPair.getVector();
+      assertEquals(expected, vector.toString());
+      vector.close();
     }
   }
 }

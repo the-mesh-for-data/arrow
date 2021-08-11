@@ -25,6 +25,7 @@ import org.apache.arrow.vector.VectorLoader;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.VectorUnloader;
 import org.apache.arrow.vector.complex.StructVector;
+import org.apache.arrow.vector.dictionary.DictionaryProvider;
 import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.ArrowType.ArrowTypeID;
@@ -36,6 +37,24 @@ import org.apache.arrow.vector.types.pojo.Schema;
  * Functions for working with the C data interface.
  */
 public final class FFI {
+  static class ImportPair {
+    private FieldVector vector;
+    private DictionaryProvider.MapDictionaryProvider dictionaryProvider;
+
+    public ImportPair(FieldVector vector, DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
+      this.vector = vector;
+      this.dictionaryProvider = dictionaryProvider;
+    }
+
+    public FieldVector getVector() {
+      return vector;
+    }
+
+    public DictionaryProvider.MapDictionaryProvider getDictionaryProvider() {
+      return dictionaryProvider;
+    }
+  }
+
   /**
    * Export Java Field using the C data interface format.
    * 
@@ -187,9 +206,10 @@ public final class FFI {
    * @param array     C data interface struct holding the array data
    * @param vector    Imported vector object [out]
    */
-  public static void importIntoVector(BufferAllocator allocator, ArrowArray array, FieldVector vector, Field field) {
-    ArrayImporter importer = new ArrayImporter(vector);
-    importer.importArray(allocator, array, field);
+  public static void importIntoVector(BufferAllocator allocator, ArrowArray array, FieldVector vector,
+                                      DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
+    ArrayImporter importer = new ArrayImporter(vector, allocator, dictionaryProvider);
+    importer.importArray(array);
   }
 
   /**
@@ -204,7 +224,7 @@ public final class FFI {
    * @param schema    C data interface struct holding the array type
    * @return Imported vector object
    */
-  public static FieldVector importVector(BufferAllocator allocator, ArrowArray array, ArrowSchema schema) {
+  public static ImportPair importVector(BufferAllocator allocator, ArrowArray array, ArrowSchema schema) {
     Field field = importField(schema);
     // at this point, if ArrowArray represents a dictionary,
     // the arrowType in field's fieldType reflect the type of
@@ -214,8 +234,10 @@ public final class FFI {
     // object which will be a parameter to DictionaryEncoder.decode()
 
     FieldVector vector = field.createVector(allocator);
-    importIntoVector(allocator, array, vector, field);
-    return vector;
+    DictionaryProvider.MapDictionaryProvider dictionaryProvider =
+            new DictionaryProvider.MapDictionaryProvider();
+    importIntoVector(allocator, array, vector, dictionaryProvider);
+    return new ImportPair(vector, dictionaryProvider);
   }
 
   /**
@@ -237,7 +259,8 @@ public final class FFI {
       for (Field field : root.getSchema().getFields()) {
         structVector.addOrGet(field.getName(), field.getFieldType(), FieldVector.class);
       }
-      importIntoVector(allocator, array, structVector, null); // is null right? assumes no dictionary
+      DictionaryProvider.MapDictionaryProvider dictionaryProvider = new DictionaryProvider.MapDictionaryProvider();
+      importIntoVector(allocator, array, structVector, dictionaryProvider);
       StructVectorUnloader unloader = new StructVectorUnloader(structVector);
       VectorLoader loader = new VectorLoader(root);
       try (ArrowRecordBatch recordBatch = unloader.getRecordBatch()) {
