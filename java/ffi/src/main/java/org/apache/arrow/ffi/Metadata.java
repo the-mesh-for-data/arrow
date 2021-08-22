@@ -36,6 +36,10 @@ import org.apache.arrow.memory.util.MemoryUtil;
  * Encode and decode metadata.
  */
 final class Metadata {
+
+  private Metadata() {
+  }
+
   static ArrowBuf encode(BufferAllocator allocator, Map<String, String> metadata) {
     if (metadata == null || metadata.size() == 0) {
       return null;
@@ -74,7 +78,7 @@ final class Metadata {
     if (size == 0) {
       return null;
     }
-    
+
     Map<String, String> result = new HashMap<>(size);
     for (int i = 0; i < size; i++) {
       String key = readString(reader);

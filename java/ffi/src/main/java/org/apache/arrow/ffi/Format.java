@@ -29,9 +29,13 @@ import org.apache.arrow.vector.types.UnionMode;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 
 /**
- * Conversion between {@link ArrowType} and string formats, as per C data interface specification.
+ * Conversion between {@link ArrowType} and string formats, as per C data
+ * interface specification.
  */
 final class Format {
+
+  private Format() {
+  }
 
   static String asString(ArrowType arrowType) {
     switch (arrowType.getTypeID()) {
@@ -182,7 +186,8 @@ final class Format {
             throw new UnsupportedOperationException(
                 String.format("Timestamp type with unit %s is unsupported", type.getUnit()));
         }
-        return String.format("%s:%s", format, type.getTimezone());
+        String timezone = type.getTimezone();
+        return String.format("%s:%s", format, timezone == null ? "" : timezone);
       }
       case Union:
         ArrowType.Union type = (ArrowType.Union) arrowType;

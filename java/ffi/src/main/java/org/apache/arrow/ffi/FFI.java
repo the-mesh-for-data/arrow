@@ -36,6 +36,10 @@ import org.apache.arrow.vector.types.pojo.Schema;
  * Functions for working with the C data interface.
  */
 public final class FFI {
+
+  private FFI() {
+  }
+
   /**
    * Export Java Field using the C data interface format.
    * 

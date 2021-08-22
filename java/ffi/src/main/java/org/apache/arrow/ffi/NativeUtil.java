@@ -32,6 +32,9 @@ public final class NativeUtil {
   public static final byte NULL = 0;
   static final int MAX_STRING_LENGTH = Short.MAX_VALUE;
 
+  private NativeUtil() {
+  }
+
   /**
    * Convert a pointer to a null terminated string into a Java String.
    * 

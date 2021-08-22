@@ -58,7 +58,13 @@ final class ArrayImporter {
     recursionLevel = 0;
     // This keeps the array alive as long as there are any buffers that need it
     referenceManager = new FFIReferenceManager(ownedArray);
-    doImport(snapshot);
+    try {
+      referenceManager.retain();
+      doImport(snapshot);
+    } finally {
+      referenceManager.release();
+    }
+
   }
 
   private void importChild(ArrayImporter parent, ArrowArray src) {
@@ -114,8 +120,8 @@ final class ArrayImporter {
     for (long bufferPtr : buffers) {
       ArrowBuf buffer = null;
       if (bufferPtr != NULL) {
-        int buferSize = vector.getBufferSizeFor(checkedCastToInt(snapshot.length));
-        buffer = new ArrowBuf(referenceManager, null, buferSize, bufferPtr);
+        // TODO(roee88): an API for getting the size for each buffer is not yet available
+        buffer = new ArrowBuf(referenceManager, null, Integer.MAX_VALUE, bufferPtr);
       }
       result.add(buffer);
     }

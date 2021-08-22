@@ -29,6 +29,9 @@ final class Flags {
   static final int ARROW_FLAG_NULLABLE = 2;
   static final int ARROW_FLAG_MAP_KEYS_SORTED = 4;
 
+  private Flags() {
+  }
+
   static long forField(Field field) {
     long flags = 0L;
     if (field.isNullable()) {
