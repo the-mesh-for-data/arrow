@@ -254,12 +254,12 @@ public final class FFI {
    * @param array     C data interface struct holding the record batch data
    * @param root      vector schema root to load into
    */
-  public static void importIntoVectorSchemaRoot(BufferAllocator allocator, ArrowArray array, VectorSchemaRoot root) {
+  public static void importIntoVectorSchemaRoot(BufferAllocator allocator, ArrowArray array, VectorSchemaRoot root,
+                                                DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
     try (StructVector structVector = StructVector.empty("", allocator)) {
       for (Field field : root.getSchema().getFields()) {
         structVector.addOrGet(field.getName(), field.getFieldType(), FieldVector.class);
       }
-      DictionaryProvider.MapDictionaryProvider dictionaryProvider = new DictionaryProvider.MapDictionaryProvider();
       importIntoVector(allocator, array, structVector, dictionaryProvider);
       StructVectorUnloader unloader = new StructVectorUnloader(structVector);
       VectorLoader loader = new VectorLoader(root);
@@ -280,8 +280,9 @@ public final class FFI {
    * @param schema    C data interface struct holding the record batch schema
    * @return Imported vector schema root
    */
-  public static VectorSchemaRoot importVectorSchemaRoot(BufferAllocator allocator, ArrowSchema schema) {
-    return importVectorSchemaRoot(allocator, schema, null);
+  public static VectorSchemaRoot importVectorSchemaRoot(BufferAllocator allocator, ArrowSchema schema,
+                                                        DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
+    return importVectorSchemaRoot(allocator, schema, null, dictionaryProvider);
   }
 
   /**
@@ -303,10 +304,10 @@ public final class FFI {
    * @return Imported vector schema root
    */
   public static VectorSchemaRoot importVectorSchemaRoot(BufferAllocator allocator, ArrowSchema schema,
-      ArrowArray array) {
+      ArrowArray array, DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
     VectorSchemaRoot vsr = VectorSchemaRoot.create(importSchema(schema), allocator);
     if (array != null) {
-      importIntoVectorSchemaRoot(allocator, array, vsr);
+      importIntoVectorSchemaRoot(allocator, array, vsr, dictionaryProvider);
     }
     return vsr;
   }

@@ -17,19 +17,23 @@
 
 package org.apache.arrow.ffi;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 
+import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.complex.StructVector;
+import org.apache.arrow.vector.dictionary.Dictionary;
+import org.apache.arrow.vector.dictionary.DictionaryEncoder;
+import org.apache.arrow.vector.dictionary.DictionaryProvider;
 import org.apache.arrow.vector.types.Types.MinorType;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.ArrowType.Struct;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.junit.After;
@@ -103,5 +107,46 @@ public abstract class TestFFI {
     VectorSchemaRoot vsr = new VectorSchemaRoot(fields, vectors);
 
     return vsr;
+  }
+
+  private static VarCharVector newVarCharVector(String name, BufferAllocator allocator) {
+    return (VarCharVector)
+            FieldType.nullable(new ArrowType.Utf8()).createNewSingleVector(name, allocator, null);
+  }
+
+  protected VectorSchemaRoot createDummyVSRWithDictionary() {
+    final byte[] zero = "zero".getBytes(StandardCharsets.UTF_8);
+    final byte[] one = "one".getBytes(StandardCharsets.UTF_8);
+    final byte[] two = "two".getBytes(StandardCharsets.UTF_8);
+    try (final VarCharVector dictionaryVector = newVarCharVector("dictionary", allocator)) {
+      final DictionaryProvider.MapDictionaryProvider provider = new DictionaryProvider.MapDictionaryProvider();
+
+      dictionaryVector.allocateNew(512, 3);
+      dictionaryVector.setSafe(0, zero, 0, zero.length);
+      dictionaryVector.setSafe(1, one, 0, one.length);
+      dictionaryVector.setSafe(2, two, 0, two.length);
+      dictionaryVector.setValueCount(3);
+
+      final Dictionary dictionary = new Dictionary(dictionaryVector, new DictionaryEncoding(1L, false, null));
+      provider.put(dictionary);
+
+      final FieldVector encodedVector;
+      try (final VarCharVector unencoded = newVarCharVector("encoded", allocator)) {
+        unencoded.allocateNewSafe();
+        unencoded.set(1, one);
+        unencoded.set(2, two);
+        unencoded.set(3, zero);
+        unencoded.set(4, two);
+        unencoded.setValueCount(6);
+        encodedVector = (FieldVector) DictionaryEncoder.encode(unencoded, dictionary);
+      }
+
+      final List<Field> fields = Collections.singletonList(encodedVector.getField());
+      final List<FieldVector> vectors = Collections.singletonList(encodedVector);
+
+      try (final VectorSchemaRoot root = new VectorSchemaRoot(fields, vectors, encodedVector.getValueCount())) {
+        return root;
+      }
+    }
   }
 }

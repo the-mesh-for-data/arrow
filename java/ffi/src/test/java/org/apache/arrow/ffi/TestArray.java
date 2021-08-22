@@ -24,6 +24,7 @@ import java.io.IOException;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.complex.StructVector;
+import org.apache.arrow.vector.dictionary.DictionaryProvider;
 import org.junit.Test;
 
 public class TestArray extends TestFFI {
@@ -40,7 +41,7 @@ public class TestArray extends TestFFI {
       try (VectorSchemaRoot vsr = createDummyVSR()) {
         expected = vsr.contentToTSVString();
 
-        // Producer creates structures from exisitng memory pointers
+        // Producer creates structures from existing memory pointers
         try (ArrowSchema arrowSchema = ArrowSchema.wrap(consumerArrowSchema.memoryAddress());
             ArrowArray arrowArray = ArrowArray.wrap(consumerArrowArray.memoryAddress())) {
           // Producer exports vector into the FFI structures
@@ -49,7 +50,43 @@ public class TestArray extends TestFFI {
       }
 
       // Consumer imports vector
-      imported = FFI.importVectorSchemaRoot(rootAllocator(), consumerArrowSchema, consumerArrowArray);
+      DictionaryProvider.MapDictionaryProvider dictionaryProvider =
+              new DictionaryProvider.MapDictionaryProvider();
+      imported = FFI.importVectorSchemaRoot(rootAllocator(), consumerArrowSchema,
+              consumerArrowArray, dictionaryProvider);
+    }
+
+    // Ensure that imported VectorSchemaRoot is valid even after FFI structures
+    // closed
+    assertEquals(expected, imported.contentToTSVString());
+    imported.close();
+  }
+
+  @Test
+  public void testExportVectorSchemaRootDictionary() throws IOException {
+    String expected;
+    VectorSchemaRoot imported;
+
+    // Consumer allocates empty structures
+    try (ArrowSchema consumerArrowSchema = ArrowSchema.allocateNew(rootAllocator());
+         ArrowArray consumerArrowArray = ArrowArray.allocateNew(rootAllocator())) {
+
+      try (VectorSchemaRoot vsr = createDummyVSRWithDictionary()) {
+        expected = vsr.contentToTSVString();
+
+        // Producer creates structures from existing memory pointers
+        try (ArrowSchema arrowSchema = ArrowSchema.wrap(consumerArrowSchema.memoryAddress());
+             ArrowArray arrowArray = ArrowArray.wrap(consumerArrowArray.memoryAddress())) {
+          // Producer exports vector into the FFI structures
+          FFI.exportVectorSchemaRoot(rootAllocator(), vsr, arrowArray, arrowSchema);
+        }
+      }
+
+      // Consumer imports vector
+      DictionaryProvider.MapDictionaryProvider dictionaryProvider =
+              new DictionaryProvider.MapDictionaryProvider();
+      imported = FFI.importVectorSchemaRoot(rootAllocator(), consumerArrowSchema,
+              consumerArrowArray, dictionaryProvider);
     }
 
     // Ensure that imported VectorSchemaRoot is valid even after FFI structures
@@ -69,7 +106,7 @@ public class TestArray extends TestFFI {
       try (StructVector vector = createDummyStructVector()) {
         expected = vector.toString();
 
-        // Producer creates structures from exisitng memory pointers
+        // Producer creates structures from existing memory pointers
         try (ArrowSchema arrowSchema = ArrowSchema.wrap(consumerArrowSchema.memoryAddress());
             ArrowArray arrowArray = ArrowArray.wrap(consumerArrowArray.memoryAddress())) {
           // Producer exports vector into the FFI structures
