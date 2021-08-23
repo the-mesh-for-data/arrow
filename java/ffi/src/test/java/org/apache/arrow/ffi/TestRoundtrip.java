@@ -119,7 +119,8 @@ public class TestRoundtrip {
       }
 
       // Consumer imports vector
-      return FFI.importVector(allocator, consumerArrowArray, consumerArrowSchema);
+      FFI.ImportPair pair = FFI.importVector(allocator, consumerArrowArray, consumerArrowSchema);
+      return pair.getVector();
     }
   }
 

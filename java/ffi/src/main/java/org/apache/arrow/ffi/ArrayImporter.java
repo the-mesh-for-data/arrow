@@ -29,7 +29,12 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.ReferenceManager;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.TypeLayout;
+import org.apache.arrow.vector.dictionary.Dictionary;
+import org.apache.arrow.vector.dictionary.DictionaryProvider;
 import org.apache.arrow.vector.ipc.message.ArrowFieldNode;
+import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.FieldType;
 
 /**
  * Importer for {@link ArrowArray}.
@@ -38,14 +43,18 @@ final class ArrayImporter {
   private static final int MAX_IMPORT_RECURSION_LEVEL = 64;
 
   final FieldVector vector;
+  final BufferAllocator allocator;
+  final DictionaryProvider.MapDictionaryProvider dictionaryProvider;
   ReferenceManager referenceManager;
   private int recursionLevel;
 
-  ArrayImporter(FieldVector vector) {
+  ArrayImporter(FieldVector vector, BufferAllocator allocator,
+                DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
     this.vector = vector;
+    this.allocator = allocator;
+    this.dictionaryProvider = dictionaryProvider;
   }
-
-  void importArray(BufferAllocator allocator, ArrowArray src) {
+  void importArray(ArrowArray src) {
     ArrowArray.Snapshot snapshot = src.snapshot();
     checkState(snapshot.release != NULL, "Cannot import released ArrowArray");
 
@@ -88,12 +97,32 @@ final class ArrayImporter {
           children.length, childVectors.size());
       for (int i = 0; i < children.length; i++) {
         checkState(children[i] != NULL, "ArrowArray struct has NULL child at position %s", i);
-        ArrayImporter childImporter = new ArrayImporter(childVectors.get(i));
+        ArrayImporter childImporter = new ArrayImporter(childVectors.get(i), allocator, dictionaryProvider);
         childImporter.importChild(this, ArrowArray.wrap(children[i]));
       }
     }
 
-    // TODO: support dictionary import
+    if (snapshot.dictionary != NULL) {
+      ArrowArray dictionary = ArrowArray.wrap(snapshot.dictionary);
+
+      Field field = vector.getField();
+
+      // the dictionary is a vector of indices. We can retrieve the ArroyType
+      // of the indices from field's DictionaryEncoding value
+      ArrowType indexType = field.getDictionary().getIndexType();
+      FieldType indexFieldType = FieldType.nullable(indexType);
+      Field indexField = new Field("", indexFieldType, null);
+
+      // import the dictionary into a dictionary FieldVector, which will then go into
+      // the dictionaryProvider
+      FieldVector dictionaryFieldVector = indexField.createVector(allocator);
+      ArrayImporter dictionaryImporter = new ArrayImporter(dictionaryFieldVector, allocator, dictionaryProvider);
+      dictionaryImporter.importArray(dictionary);
+
+      Dictionary d = new Dictionary(dictionaryFieldVector, field.getDictionary());
+
+      dictionaryProvider.put(d);
+    }
 
     // Import main data
     ArrowFieldNode fieldNode = new ArrowFieldNode(snapshot.length, snapshot.null_count);

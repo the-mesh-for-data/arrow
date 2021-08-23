@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 
@@ -34,13 +35,30 @@ import org.apache.arrow.vector.types.pojo.FieldType;
  * Importer for {@link ArrowSchema}.
  */
 final class SchemaImporter {
+  /**
+   * Counter class to give a different value to the
+   * different DictionaryEncoding objects
+   */
+  class Counter {
+    long count = 0L;
+
+    long value() {
+      return count;
+    }
+
+    void increment() {
+      count++;
+    }
+  }
+
   private static final int MAX_IMPORT_RECURSION_LEVEL = 64;
 
   Field importField(ArrowSchema schema) {
-    return importField(schema, 0);
+    Counter counter = new Counter();
+    return importField(schema, 0, counter);
   }
 
-  private Field importField(ArrowSchema schema, int recursionLevel) {
+  private Field importField(ArrowSchema schema, int recursionLevel, Counter counter) {
     checkState(recursionLevel < MAX_IMPORT_RECURSION_LEVEL, "Recursion level in ArrowSchema struct exceeded");
 
     ArrowSchema.Snapshot snapshot = schema.snapshot();
@@ -52,8 +70,22 @@ final class SchemaImporter {
     ArrowType arrowType = Format.asType(format, snapshot.flags);
     boolean nullable = (snapshot.flags & Flags.ARROW_FLAG_NULLABLE) != 0;
     Map<String, String> metadata = Metadata.decode(snapshot.metadata);
-    // TODO: support dictionary
-    FieldType fieldType = new FieldType(nullable, arrowType, null, metadata);
+
+    DictionaryEncoding dictionaryEncoding = null;
+    if (snapshot.dictionary != NULL) {
+      ArrowSchema dictionary = ArrowSchema.wrap(snapshot.dictionary);
+      boolean ordered = (snapshot.flags & Flags.ARROW_FLAG_DICTIONARY_ORDERED) != 0;
+      ArrowType.Int indexType = (ArrowType.Int) arrowType;
+      dictionaryEncoding = new DictionaryEncoding(counter.value(), ordered, indexType);
+      counter.increment();
+
+      // change the arrowType to be that of the dictionary (rather than that of the indices)
+      ArrowSchema.Snapshot dictionarySnapshot = dictionary.snapshot();
+      String dictionaryFormat = NativeUtil.toJavaString(dictionarySnapshot.format);
+      arrowType = Format.asType(dictionaryFormat, dictionarySnapshot.flags);
+    }
+
+    FieldType fieldType = new FieldType(nullable, arrowType, dictionaryEncoding, metadata);
 
     List<Field> children = null;
     long[] childrenIds = NativeUtil.toJavaArray(snapshot.children, checkedCastToInt(snapshot.n_children));
@@ -61,7 +93,7 @@ final class SchemaImporter {
       children = new ArrayList<>(childrenIds.length);
       for (long childAddress : childrenIds) {
         ArrowSchema childSchema = ArrowSchema.wrap(childAddress);
-        Field field = importField(childSchema, recursionLevel + 1);
+        Field field = importField(childSchema, recursionLevel + 1, counter);
         children.add(field);
       }
     }
