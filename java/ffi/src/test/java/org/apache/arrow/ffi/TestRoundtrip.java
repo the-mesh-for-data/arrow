@@ -79,6 +79,7 @@ import org.apache.arrow.vector.complex.MapVector;
 import org.apache.arrow.vector.complex.StructVector;
 import org.apache.arrow.vector.complex.UnionVector;
 import org.apache.arrow.vector.complex.impl.UnionMapWriter;
+import org.apache.arrow.vector.dictionary.DictionaryProvider;
 import org.apache.arrow.vector.holders.IntervalDayHolder;
 import org.apache.arrow.vector.holders.NullableLargeVarBinaryHolder;
 import org.apache.arrow.vector.holders.NullableUInt4Holder;
@@ -575,7 +576,7 @@ public class TestRoundtrip {
     try (ArrowSchema consumerArrowSchema = ArrowSchema.allocateNew(allocator);
         ArrowArray consumerArrowArray = ArrowArray.allocateNew(allocator)) {
       try (VectorSchemaRoot vsr = createTestVSR()) {
-        // Producer creates structures from exisitng memory pointers
+        // Producer creates structures from existing memory pointers
         try (ArrowSchema arrowSchema = ArrowSchema.wrap(consumerArrowSchema.memoryAddress());
             ArrowArray arrowArray = ArrowArray.wrap(consumerArrowArray.memoryAddress())) {
           // Producer exports vector into the FFI structures
@@ -583,7 +584,9 @@ public class TestRoundtrip {
         }
       }
       // Consumer imports vector
-      imported = FFI.importVectorSchemaRoot(allocator, consumerArrowSchema, consumerArrowArray);
+      DictionaryProvider.MapDictionaryProvider dictionaryProvider =
+              new DictionaryProvider.MapDictionaryProvider();
+      imported = FFI.importVectorSchemaRoot(allocator, consumerArrowSchema, consumerArrowArray, dictionaryProvider);
     }
 
     // Ensure that imported VectorSchemaRoot is valid even after FFI structures

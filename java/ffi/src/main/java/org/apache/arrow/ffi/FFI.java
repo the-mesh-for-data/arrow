@@ -254,16 +254,17 @@ public final class FFI {
    * The schema of the vector schema root must match the input array (undefined
    * behavior otherwise).
    * 
-   * @param allocator Buffer allocator
-   * @param array     C data interface struct holding the record batch data
-   * @param root      vector schema root to load into
+   * @param allocator            Buffer allocator
+   * @param array                C data interface struct holding the record batch data
+   * @param root                 vector schema root to load into
+   * @param dictionaryProvider   dictionary provider
    */
-  public static void importIntoVectorSchemaRoot(BufferAllocator allocator, ArrowArray array, VectorSchemaRoot root) {
+  public static void importIntoVectorSchemaRoot(BufferAllocator allocator, ArrowArray array, VectorSchemaRoot root,
+                                                DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
     try (StructVector structVector = StructVector.empty("", allocator)) {
       for (Field field : root.getSchema().getFields()) {
         structVector.addOrGet(field.getName(), field.getFieldType(), FieldVector.class);
       }
-      DictionaryProvider.MapDictionaryProvider dictionaryProvider = new DictionaryProvider.MapDictionaryProvider();
       importIntoVector(allocator, array, structVector, dictionaryProvider);
       StructVectorUnloader unloader = new StructVectorUnloader(structVector);
       VectorLoader loader = new VectorLoader(root);
@@ -280,12 +281,14 @@ public final class FFI {
    * 
    * The ArrowSchema struct is released, even if this function fails.
    * 
-   * @param allocator Buffer allocator for allocating the output VectorSchemaRoot
-   * @param schema    C data interface struct holding the record batch schema
+   * @param allocator             Buffer allocator for allocating the output VectorSchemaRoot
+   * @param schema                C data interface struct holding the record batch schema
+   * @param dictionaryProvider    dictionary provider
    * @return Imported vector schema root
    */
-  public static VectorSchemaRoot importVectorSchemaRoot(BufferAllocator allocator, ArrowSchema schema) {
-    return importVectorSchemaRoot(allocator, schema, null);
+  public static VectorSchemaRoot importVectorSchemaRoot(BufferAllocator allocator, ArrowSchema schema,
+                                                        DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
+    return importVectorSchemaRoot(allocator, schema, null, dictionaryProvider);
   }
 
   /**
@@ -300,17 +303,18 @@ public final class FFI {
    * Prefer {@link #importIntoVectorSchemaRoot} for loading array data while
    * reusing the same vector schema root.
    * 
-   * @param allocator Buffer allocator for allocating the output VectorSchemaRoot
-   * @param schema    C data interface struct holding the record batch schema
-   * @param array     Optional C data interface struct holding the record batch
-   *                  data
+   * @param allocator             Buffer allocator for allocating the output VectorSchemaRoot
+   * @param schema                C data interface struct holding the record batch schema
+   * @param array                 Optional C data interface struct holding the record batch
+   *                              data
+   * @param dictionaryProvider    dictionary provider
    * @return Imported vector schema root
    */
   public static VectorSchemaRoot importVectorSchemaRoot(BufferAllocator allocator, ArrowSchema schema,
-      ArrowArray array) {
+      ArrowArray array, DictionaryProvider.MapDictionaryProvider dictionaryProvider) {
     VectorSchemaRoot vsr = VectorSchemaRoot.create(importSchema(schema), allocator);
     if (array != null) {
-      importIntoVectorSchemaRoot(allocator, array, vsr);
+      importIntoVectorSchemaRoot(allocator, array, vsr, dictionaryProvider);
     }
     return vsr;
   }
