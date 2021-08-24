@@ -25,6 +25,7 @@ import org.apache.arrow.vector.VectorLoader;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.VectorUnloader;
 import org.apache.arrow.vector.complex.StructVector;
+import org.apache.arrow.vector.dictionary.Dictionary;
 import org.apache.arrow.vector.dictionary.DictionaryProvider;
 import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.arrow.vector.types.pojo.ArrowType;
@@ -110,13 +111,18 @@ public final class FFI {
    * @param outSchema Optional C struct where to export the array type
    */
   public static void exportVector(BufferAllocator allocator, FieldVector vector, ArrowArray out,
-      ArrowSchema outSchema) {
+                                  ArrowSchema outSchema) {
+    exportVector(allocator, vector, out, outSchema, null);
+  }
+
+  public static void exportVector(BufferAllocator allocator, FieldVector vector, ArrowArray out,
+                                  ArrowSchema outSchema, DictionaryProvider dictionaryProvider) {
     if (outSchema != null) {
       exportField(allocator, vector.getField(), outSchema);
     }
 
     ArrayExporter exporter = new ArrayExporter(out);
-    exporter.export(allocator, vector, vector.getChildrenFromFields());
+    exporter.export(allocator, vector, vector.getChildrenFromFields(), dictionaryProvider);
   }
 
   /**

@@ -17,6 +17,7 @@
 
 package org.apache.arrow.ffi;
 
+import static org.apache.arrow.vector.TestUtils.newVarCharVector;
 import static org.apache.arrow.vector.testing.ValueVectorDataPopulator.setVector;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -79,6 +80,8 @@ import org.apache.arrow.vector.complex.MapVector;
 import org.apache.arrow.vector.complex.StructVector;
 import org.apache.arrow.vector.complex.UnionVector;
 import org.apache.arrow.vector.complex.impl.UnionMapWriter;
+import org.apache.arrow.vector.dictionary.Dictionary;
+import org.apache.arrow.vector.dictionary.DictionaryEncoder;
 import org.apache.arrow.vector.dictionary.DictionaryProvider;
 import org.apache.arrow.vector.holders.IntervalDayHolder;
 import org.apache.arrow.vector.holders.NullableLargeVarBinaryHolder;
@@ -86,6 +89,7 @@ import org.apache.arrow.vector.holders.NullableUInt4Holder;
 import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.Types.MinorType;
 import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
@@ -107,12 +111,30 @@ public class TestRoundtrip {
     allocator.close();
   }
 
+  FieldVector vectorRoundtripWithDictionary(FieldVector vector, DictionaryProvider.MapDictionaryProvider provider) {
+    // Consumer allocates empty structures
+    try (ArrowSchema consumerArrowSchema = ArrowSchema.allocateNew(allocator);
+         ArrowArray consumerArrowArray = ArrowArray.allocateNew(allocator)) {
+
+      // Producer creates structures from existing memory pointers
+      try (ArrowSchema arrowSchema = ArrowSchema.wrap(consumerArrowSchema.memoryAddress());
+           ArrowArray arrowArray = ArrowArray.wrap(consumerArrowArray.memoryAddress())) {
+        // Producer exports vector into the FFI structures
+        FFI.exportVector(allocator, vector, arrowArray, arrowSchema, provider);
+      }
+
+      // Consumer imports vector
+      FFI.ImportPair pair = FFI.importVector(allocator, consumerArrowArray, consumerArrowSchema);
+      return pair.getVector();
+    }
+  }
+
   FieldVector vectorRoundtrip(FieldVector vector) {
     // Consumer allocates empty structures
     try (ArrowSchema consumerArrowSchema = ArrowSchema.allocateNew(allocator);
         ArrowArray consumerArrowArray = ArrowArray.allocateNew(allocator)) {
 
-      // Producer creates structures from exisitng memory pointers
+      // Producer creates structures from existing memory pointers
       try (ArrowSchema arrowSchema = ArrowSchema.wrap(consumerArrowSchema.memoryAddress());
           ArrowArray arrowArray = ArrowArray.wrap(consumerArrowArray.memoryAddress())) {
         // Producer exports vector into the FFI structures
@@ -158,6 +180,31 @@ public class TestRoundtrip {
     assertEquals(1, imported.get(1022));
     assertEquals(1020, imported.getNullCount());
     imported.close();
+  }
+
+  byte[] zero = "foo".getBytes(StandardCharsets.UTF_8);
+  byte[] one = "bar".getBytes(StandardCharsets.UTF_8);
+  byte[] two = "baz".getBytes(StandardCharsets.UTF_8);
+
+  @Test
+  public void testVarCharDictionaryVector() {
+    VarCharVector imported;
+
+    try (final VarCharVector vector = newVarCharVector("foo", allocator);
+         final VarCharVector dictionaryVector = newVarCharVector("dict", allocator);) {
+      setVector(vector, zero, one, one, two, zero);
+      setVector(dictionaryVector, zero, one, two);
+
+      long dictionaryID = 1L;
+      Dictionary dictionary =
+              new Dictionary(dictionaryVector, new DictionaryEncoding(dictionaryID, false, null));
+      DictionaryProvider.MapDictionaryProvider dictionaryProvider = new DictionaryProvider.MapDictionaryProvider();
+      dictionaryProvider.put(dictionary);
+      try (final ValueVector encoded = DictionaryEncoder.encode(vector, dictionary)) {
+        imported = (VarCharVector) vectorRoundtripWithDictionary((FieldVector) encoded, dictionaryProvider);
+        assertTrue(VectorEqualsVisitor.vectorEquals(vector, imported));
+      }
+    }
   }
 
   @Test
@@ -601,9 +648,9 @@ public class TestRoundtrip {
   public void testSchema() {
     Field decimalField = new Field("inner1", FieldType.nullable(new ArrowType.Decimal(19, 4, 128)), null);
     Field strField = new Field("inner2", FieldType.nullable(new ArrowType.Utf8()), null);
-    Field itemField = new Field("col1", FieldType.nullable(new ArrowType.Struct()), List.of(decimalField, strField));
+    Field itemField = new Field("col1", FieldType.nullable(new ArrowType.Struct()), Arrays.asList(decimalField, strField));
     Field intField = new Field("col2", FieldType.nullable(new ArrowType.Int(32, true)), null);
-    Schema schema = new Schema(List.of(itemField, intField));
+    Schema schema = new Schema(Arrays.asList(itemField, intField));
     // Consumer allocates empty ArrowSchema
     try (ArrowSchema consumerArrowSchema = ArrowSchema.allocateNew(allocator)) {
       // Producer fills the schema with data

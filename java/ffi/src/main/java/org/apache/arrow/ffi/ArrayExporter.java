@@ -28,6 +28,9 @@ import org.apache.arrow.ffi.jni.PrivateData;
 import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.dictionary.Dictionary;
+import org.apache.arrow.vector.dictionary.DictionaryProvider;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 
 /**
  * Exporter for {@link ArrowArray}.
@@ -42,6 +45,7 @@ final class ArrayExporter {
     ArrowBuf children_ptrs;
     List<ArrowArray> children;
     ArrowArray dictionary;
+    ArrowBuf dictionary_ptr;
 
     @Override
     public void close() {
@@ -72,12 +76,16 @@ final class ArrayExporter {
     this.array = dst;
   }
 
-  void export(BufferAllocator allocator, FieldVector vector, List<FieldVector> children) {
-    export(allocator, vector.getFieldBuffers(), vector.getValueCount(), vector.getNullCount(), children);
+  void export(BufferAllocator allocator, FieldVector vector, List<FieldVector> children,
+              DictionaryProvider dictionaryProvider) {
+    export(allocator, vector, vector.getValueCount(), vector.getNullCount(), children, dictionaryProvider);
   }
 
-  void export(BufferAllocator allocator, List<ArrowBuf> buffers, int valueCount, int nullCount,
-      List<FieldVector> children) {
+  void export(BufferAllocator allocator, FieldVector vector, int valueCount, int nullCount,
+      List<FieldVector> children, DictionaryProvider dictionaryProvider) {
+    List<ArrowBuf> buffers = vector.getFieldBuffers();
+    Dictionary dictionary = null;
+
     ExportedArrayPrivateData data = new ExportedArrayPrivateData();
     try {
       if (children != null) {
@@ -88,6 +96,13 @@ final class ArrayExporter {
           data.children.add(child);
           data.children_ptrs.writeLong(child.memoryAddress());
         }
+      }
+
+      DictionaryEncoding dictionaryEncoding = vector.getField().getDictionary();
+      if (dictionaryEncoding != null) {
+        dictionary = dictionaryProvider.lookup(dictionaryEncoding.getId());
+        data.dictionary = ArrowArray.allocateNew(allocator);
+        data.dictionary_ptr.writeLong(data.dictionary.memoryAddress());
       }
 
       if (buffers != null) {
@@ -112,7 +127,7 @@ final class ArrayExporter {
       snapshot.n_children = (data.children != null) ? data.children.size() : 0;
       snapshot.buffers = addressOrNull(data.buffers_ptrs);
       snapshot.children = addressOrNull(data.children_ptrs);
-      snapshot.dictionary = NULL; // TODO: support dictionary export
+      snapshot.dictionary = addressOrNull(data.dictionary_ptr);
       snapshot.release = NULL;
       array.save(snapshot);
 
@@ -129,8 +144,14 @@ final class ArrayExporter {
         FieldVector childVector = children.get(i);
         ArrowArray child = data.children.get(i);
         ArrayExporter childExporter = new ArrayExporter(child);
-        childExporter.export(allocator, childVector, childVector.getChildrenFromFields());
+        childExporter.export(allocator, childVector, childVector.getChildrenFromFields(), dictionaryProvider);
       }
+    }
+
+    if (dictionary != null) {
+      FieldVector dictionaryVector = dictionary.getVector();
+      ArrayExporter dictionaryExporter = new ArrayExporter(data.dictionary);
+      dictionaryExporter.export(allocator, dictionaryVector, null, dictionaryProvider);
     }
   }
 }
