@@ -27,6 +27,7 @@ import org.apache.arrow.ffi.jni.JniWrapper;
 import org.apache.arrow.ffi.jni.PrivateData;
 import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
 
 /**
@@ -72,6 +73,7 @@ final class SchemaExporter {
     String format = Format.asString(field.getType());
     long flags = Flags.forField(field);
     List<Field> children = field.getChildren();
+    DictionaryEncoding dictionaryEncoding = field.getDictionary();
 
     ExportedSchemaPrivateData data = new ExportedSchemaPrivateData();
     try {
@@ -89,6 +91,10 @@ final class SchemaExporter {
         }
       }
 
+      if (dictionaryEncoding != null) {
+        data.dictionary = ArrowSchema.allocateNew(allocator);
+      }
+
       ArrowSchema.Snapshot snapshot = new ArrowSchema.Snapshot();
       snapshot.format = data.format.memoryAddress();
       snapshot.name = addressOrNull(data.name);
@@ -96,7 +102,7 @@ final class SchemaExporter {
       snapshot.flags = flags;
       snapshot.n_children = (data.children != null) ? data.children.size() : 0;
       snapshot.children = addressOrNull(data.children_ptrs);
-      snapshot.dictionary = NULL; // TODO: support dictionary export
+      snapshot.dictionary = addressOrNull(data.dictionary);
       snapshot.release = NULL;
       schema.save(snapshot);
 
@@ -105,6 +111,13 @@ final class SchemaExporter {
     } catch (Exception e) {
       data.close();
       throw e;
+    }
+
+    // Export dictionary
+    if (dictionaryEncoding != null) {
+      Field dictionaryField = Field.nullable("", dictionaryEncoding.getIndexType());
+      SchemaExporter dictionaryExporter = new SchemaExporter(data.dictionary);
+      dictionaryExporter.export(allocator, dictionaryField);
     }
 
     // Export children
