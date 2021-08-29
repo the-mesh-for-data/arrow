@@ -45,7 +45,6 @@ final class ArrayExporter {
     ArrowBuf children_ptrs;
     List<ArrowArray> children;
     ArrowArray dictionary;
-    ArrowBuf dictionary_ptr;
 
     @Override
     public void close() {
@@ -102,7 +101,6 @@ final class ArrayExporter {
       if (dictionaryEncoding != null) {
         dictionary = dictionaryProvider.lookup(dictionaryEncoding.getId());
         data.dictionary = ArrowArray.allocateNew(allocator);
-        data.dictionary_ptr.writeLong(data.dictionary.memoryAddress());
       }
 
       if (buffers != null) {
@@ -127,7 +125,7 @@ final class ArrayExporter {
       snapshot.n_children = (data.children != null) ? data.children.size() : 0;
       snapshot.buffers = addressOrNull(data.buffers_ptrs);
       snapshot.children = addressOrNull(data.children_ptrs);
-      snapshot.dictionary = addressOrNull(data.dictionary_ptr);
+      snapshot.dictionary = addressOrNull(data.dictionary);
       snapshot.release = NULL;
       array.save(snapshot);
 
